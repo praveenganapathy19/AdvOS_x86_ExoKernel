@@ -1,0 +1,9 @@
+# Homework 12
+
+Paper read for homework assignment: [Journaling the Linux ext2fs Filesystem (1998)](https://pdos.csail.mit.edu/6.828/2014/readings/journal-design.pdf).
+
+Question: Mid-way down the left column on page 6, the Journaling paper says "However, until we have finished syncing those buffers, we cannot delete the copy of the data in the journal." Give a concrete example in which removing this rule would lead to disaster.
+
+At that point in the transaction's lifetime the state of the filesystem is as follows: (1) the journal contains the modified metadata blocks and they have been written out to the journal file on disk, (2) any dependent data has been written out to disk and (3) the transaction is committed. We can only release the journal space after *all* the metadata blocks are synched back with their original positions on disk. If we release metadata block space in the journal as blocks get migrated one by one, we would violate the transaction invariant.
+
+For example, a file move transaction (two operations: delete from dir1 and create in dir2, translating to writes to two different inodes, call them W1 and W2) could leave the filesystem in an inconsistent state if a crash happened while a second transaction started reclaiming space before the first one finished. Say W1 successfully gets synched to its original position, a second transaction reclaims the spot (W3), the system crashes, reboots and starts fixing the filesystem, sees that the transaction is committed and proceeds to synch all the metadata blocks. However, it's synching W3 and W2, instead of W1 and W2. We don't know if the second transaction ever committed, but one of its updated metadata blocks, W3, gets written out to disk, possibly pointing at unintialized/free blocks and introducing corruption to the filesystem.
